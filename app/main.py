@@ -41,8 +41,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="CryFi", version="1.0.0", lifespan=lifespan)
 
 
-# Paths reachable without a session.
-_AUTH_PUBLIC = {"/login", "/api/login", "/api/logout", "/api/me", "/api/health", "/favicon.ico"}
+# Paths reachable without a session (PWA assets must load pre-login too).
+_AUTH_PUBLIC = {
+    "/login", "/api/login", "/api/logout", "/api/me", "/api/health",
+    "/favicon.ico", "/sw.js", "/manifest.webmanifest",
+}
 
 
 @app.middleware("http")
@@ -70,7 +73,8 @@ async def no_cache_static(request: Request, call_next):
     fast-path but guarantees the client never runs an outdated bundle.
     """
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/static"):
+    p = request.url.path
+    if p == "/" or p.startswith("/static") or p in ("/sw.js", "/manifest.webmanifest"):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
@@ -100,6 +104,24 @@ async def login_page():
 @app.get("/")
 async def index():
     return FileResponse(config.STATIC_DIR / "index.html")
+
+
+# --- PWA assets (served from the root so scope/links work) ---------------
+
+@app.get("/sw.js")
+async def service_worker():
+    # Root scope so the worker can control the whole app.
+    return FileResponse(config.STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
+@app.get("/manifest.webmanifest")
+async def manifest():
+    return FileResponse(config.STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(config.STATIC_DIR / "favicon-32.png", media_type="image/png")
 
 
 # Static assets (css/js). Mounted last so it doesn't shadow API routes.
