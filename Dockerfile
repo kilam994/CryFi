@@ -36,6 +36,9 @@ RUN mkdir -p /app/captures /app/wordlists
 VOLUME ["/app/captures", "/app/wordlists"]
 
 # Runs as root inside the privileged container so airmon-ng/airodump can touch
-# the host Wi-Fi hardware. Sudo is therefore unnecessary (NETAUDIT_USE_SUDO=0).
+# the host Wi-Fi hardware. Sudo is therefore unnecessary (CRYFI_USE_SUDO=0).
+# --proxy-headers: trust X-Forwarded-* from a TLS reverse proxy (e.g. for
+# https://wifi.malik.casa) so the scheme/secure-cookie logic is correct.
 EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

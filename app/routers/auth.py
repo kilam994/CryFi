@@ -21,13 +21,16 @@ class ChangePassword(BaseModel):
 
 
 @router.post("/login")
-def login(body: Login, response: Response) -> dict:
+def login(body: Login, request: Request, response: Response) -> dict:
     if not auth.check_credentials(body.username, body.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = auth.create_session()
+    # Mark the cookie Secure when served over HTTPS (e.g. behind a TLS proxy);
+    # uvicorn --proxy-headers makes request.url.scheme reflect X-Forwarded-Proto.
+    secure = request.url.scheme == "https"
     response.set_cookie(
         auth.COOKIE_NAME, token,
-        httponly=True, samesite="lax", path="/",
+        httponly=True, samesite="lax", path="/", secure=secure,
         max_age=int(config.SESSION_HOURS * 3600),
     )
     return {"ok": True, "user": auth.current_user()}
