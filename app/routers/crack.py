@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import config
+from ..core.handshakes import store as handshake_store
 from ..core.process_manager import manager
 from ..core.security import clean_bssid, safe_path_in
 
@@ -52,6 +53,10 @@ def _crack_hook(job, line: str) -> None:
     if m:
         job.meta["key"] = m.group(1)
         job.meta["status"] = "found"
+        # Persist the cracked passphrase onto its handshake entry.
+        cap = job.meta.get("cap")
+        if cap:
+            handshake_store.set_password(cap, m.group(1))
         return
     if _RE_WPA3.search(s):
         job.meta["status"] = "wpa3"

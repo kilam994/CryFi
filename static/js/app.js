@@ -817,17 +817,26 @@
     const essidHtml = hidden
       ? '<span class="text-slate-500">&lt;hidden&gt;</span> <span class="essid-hidden">🔒</span>'
       : escapeHtml(h.essid);
+    const cracked = !!h.password;
+    const passRow = cracked
+      ? `<div class="hs-pass">🔑 password:
+           <code class="hs-pass-val" data-pw="${escapeHtml(h.password)}">••••••••</code>
+           <button class="btn-secondary hs-pass-reveal">Reveal</button>
+           <button class="btn-secondary hs-pass-copy">Copy</button>
+         </div>`
+      : "";
     el.innerHTML = `
-      <div>
-        <div class="essid">${essidHtml}</div>
+      <div class="min-w-0">
+        <div class="essid">${essidHtml} ${cracked ? '<span class="hs-cracked">✓ cracked</span>' : ""}</div>
         <div class="meta">
           <code>${h.bssid}</code> · ch ${h.channel ?? "?"} · ${escapeHtml(h.cap)}
           ${h.captured_at ? "· " + escapeHtml(h.captured_at) : ""}
         </div>
+        ${passRow}
       </div>
       <div class="flex gap-2 shrink-0">
         ${hidden ? '<button class="btn-secondary hs-reveal" title="Recover the SSID from the handshake">🔓 Reveal SSID</button>' : ""}
-        <button class="btn-primary hs-attack">Dictionary Attack</button>
+        <button class="btn-primary hs-attack">${cracked ? "Re-crack" : "Dictionary Attack"}</button>
         <button class="btn-danger hs-del">Delete</button>
       </div>`;
     el.querySelector(".hs-attack").addEventListener("click", () => crackFromHandshake(h));
@@ -846,6 +855,21 @@
         toast(e.message, true);
         revealBtn.disabled = false; revealBtn.textContent = "🔓 Reveal SSID";
       }
+    });
+    // Masked password reveal / copy.
+    const pwVal = el.querySelector(".hs-pass-val");
+    const pwReveal = el.querySelector(".hs-pass-reveal");
+    if (pwReveal) {
+      let shown = false;
+      pwReveal.addEventListener("click", () => {
+        shown = !shown;
+        pwVal.textContent = shown ? pwVal.dataset.pw : "••••••••";
+        pwReveal.textContent = shown ? "Hide" : "Reveal";
+      });
+    }
+    const pwCopy = el.querySelector(".hs-pass-copy");
+    if (pwCopy) pwCopy.addEventListener("click", () => {
+      navigator.clipboard?.writeText(pwVal.dataset.pw).then(() => toast("Password copied", "info"));
     });
     return el;
   }
@@ -983,6 +1007,7 @@
       $("#crack-current").textContent = meta.key;
       crackCelebrate(meta.key);
       toast(`🎉 Key found: ${meta.key}`, "info", 10000);
+      loadHandshakes();  // password now stored — show it (masked) in section 3
     } else if (status === "stopped") {
       setCrackState("stopped");
     } else if (status === "wpa3") {

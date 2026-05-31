@@ -197,6 +197,10 @@ html { scroll-behavior: smooth; }
 .hs-card .essid { font-weight: 600; color: #e2e8f0; }
 .hs-card .meta { color: #64748b; font-size: 0.72rem; }
 .hs-card code { color: #93c5fd; }
+.hs-cracked { font-size: 0.62rem; font-weight: 700; padding: 0.05rem 0.4rem; border-radius: 0.3rem; background: rgba(16,185,129,0.18); color: #6ee7b7; vertical-align: middle; }
+.hs-pass { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.4rem; font-size: 0.78rem; color: #94a3b8; }
+.hs-pass-val { color: #6ee7b7 !important; font-weight: 700; letter-spacing: 0.04em; }
+.hs-pass .btn-secondary { padding: 0.1rem 0.45rem; font-size: 0.68rem; }
 
 /* Scan rows are not clickable while a capture is locked to one target. */
 #scan-rows.locked .scan-row { cursor: not-allowed; opacity: 0.55; }

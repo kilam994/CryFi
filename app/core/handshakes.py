@@ -68,6 +68,15 @@ class HandshakeStore:
         self._save()
         return True
 
+    def set_password(self, cap: str, password: str) -> bool:
+        """Record the cracked passphrase for a capture (shown in the UI)."""
+        entry = self.get(cap)
+        if entry is None:
+            return False
+        entry["password"] = password
+        self._save()
+        return True
+
     def remove(self, cap: str) -> None:
         before = len(self._items)
         self._items = [i for i in self._items if i["cap"] != cap]
