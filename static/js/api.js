@@ -44,6 +44,7 @@ const API = {
   jobGet(id) { return this.get(`/api/jobs/${encodeURIComponent(id)}`); },
 
   handshakes() { return this.get("/api/handshakes"); },
+  revealHandshakeSsid(cap) { return this.post(`/api/handshakes/${encodeURIComponent(cap)}/reveal`); },
   deleteHandshake(cap) { return this.del(`/api/handshakes/${encodeURIComponent(cap)}`); },
 
   captures() { return this.get("/api/captures"); },

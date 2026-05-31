@@ -546,26 +546,23 @@
 
   function revealSucceeded(name) {
     revealedDone = true;
+    revealMode = false;  // from here it's a normal capture — keep going
     const bssid = (captureTargetSnap || selectedTarget || {}).bssid;
-    setCapState("revealed");
-    captureStatus(`🔓 Revealed: ${name}`, "ok");
-    const f = $("#cap-found");
-    f.innerHTML = `<div class="big">🔓 SSID revealed!</div>` +
-      `<div style="margin-top:.3rem">network name: <code>${escapeHtml(name)}</code></div>`;
-    f.classList.remove("hidden"); f.classList.remove("show"); void f.offsetWidth; f.classList.add("show");
+    // Surface the revealed name, but DO NOT stop — let the capture keep running
+    // so a handshake (forced via deauth) is still caught and shown live.
+    captureStatus(`🔓 Revealed: ${name} — still capturing; deauth a client for the handshake…`, "ok");
     toast(`🔓 Hidden SSID revealed: ${name}`, "info", 10000);
+    $("#cap-target").textContent = `${name} · ${bssid} · ch ${(captureTargetSnap || {}).channel ?? "?"}`;
     // Reflect the name in the Target panel + the scan table row + cache.
     $("#t-essid").textContent = name;
     if (selectedTarget) { selectedTarget.essid = name; selectedTarget.hidden = false; }
+    if (captureTargetSnap) captureTargetSnap.essid = name;
     const cached = _apsCache.find((a) => a.bssid === bssid);
     if (cached) { cached.essid = name; cached.hidden = false; }
     if (bssid) {
       const row = [...$$(".scan-row")].find((r) => r.querySelector("code")?.textContent === bssid);
       if (row && row.children[1]) row.children[1].textContent = name;
     }
-    // The reveal goal is met — stop the listen job.
-    stopAll();
-    revealMode = false;
   }
 
   // Fire-and-forget: give instant feedback and never block the button on the
@@ -801,15 +798,20 @@
   function hsCard(h) {
     const el = document.createElement("div");
     el.className = "hs-card";
+    const hidden = !h.essid;
+    const essidHtml = hidden
+      ? '<span class="text-slate-500">&lt;hidden&gt;</span> <span class="essid-hidden">🔒</span>'
+      : escapeHtml(h.essid);
     el.innerHTML = `
       <div>
-        <div class="essid">${escapeHtml(h.essid) || '<span class="text-slate-500">&lt;hidden&gt;</span>'}</div>
+        <div class="essid">${essidHtml}</div>
         <div class="meta">
           <code>${h.bssid}</code> · ch ${h.channel ?? "?"} · ${escapeHtml(h.cap)}
           ${h.captured_at ? "· " + escapeHtml(h.captured_at) : ""}
         </div>
       </div>
       <div class="flex gap-2 shrink-0">
+        ${hidden ? '<button class="btn-secondary hs-reveal" title="Recover the SSID from the handshake">🔓 Reveal SSID</button>' : ""}
         <button class="btn-primary hs-attack">Dictionary Attack</button>
         <button class="btn-danger hs-del">Delete</button>
       </div>`;
@@ -817,6 +819,18 @@
     el.querySelector(".hs-del").addEventListener("click", async () => {
       if (!confirm(`Delete handshake + capture ${h.cap}?`)) return;
       try { await API.deleteHandshake(h.cap); loadHandshakes(); } catch (e) { toast(e.message, true); }
+    });
+    const revealBtn = el.querySelector(".hs-reveal");
+    if (revealBtn) revealBtn.addEventListener("click", async () => {
+      revealBtn.disabled = true; revealBtn.textContent = "Revealing…";
+      try {
+        const r = await API.revealHandshakeSsid(h.cap);
+        toast(`🔓 SSID revealed: ${r.essid}`, "info", 9000);
+        loadHandshakes();
+      } catch (e) {
+        toast(e.message, true);
+        revealBtn.disabled = false; revealBtn.textContent = "🔓 Reveal SSID";
+      }
     });
     return el;
   }

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
+import time
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -24,7 +25,9 @@ from ..core.security import clean_bssid, clean_channel, clean_count, clean_iface
 
 router = APIRouter(prefix="/api", tags=["execution"])
 
-# airodump-ng prints e.g. "WPA handshake: AA:BB:CC:DD:EE:FF" on success.
+# airodump-ng prints e.g. "WPA handshake: AA:BB:CC:DD:EE:FF" on success, but
+# embedded in ANSI cursor codes — strip those before matching.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _HANDSHAKE_RE = re.compile(r"WPA handshake:\s*([0-9A-Fa-f:]{17})")
 
 
@@ -92,7 +95,7 @@ async def start_capture(body: CaptureStart) -> dict:
         """Detect the handshake notice, record it, then auto-stop the capture."""
         if j.meta.get("handshake_captured"):
             return
-        m = _HANDSHAKE_RE.search(line)
+        m = _HANDSHAKE_RE.search(_ANSI_RE.sub("", line))
         if not m:
             return
         # Confirm it's our target (case-insensitive); ignore stray matches.
@@ -105,8 +108,15 @@ async def start_capture(body: CaptureStart) -> dict:
             key=lambda p: p.stat().st_mtime, reverse=True,
         )
         cap_name = caps[0].name if caps else None
+        # If the SSID was hidden, the live CSV may now hold the revealed name.
+        recorded_essid = essid
+        live = csv_parser.parse_latest_csv(config.CAPTURES_DIR, prefix)
+        ap = next((a for a in live["aps"] if a["bssid"].upper() == bssid.upper()), None)
+        if ap and ap.get("essid"):
+            recorded_essid = ap["essid"]
+            j.meta["essid"] = recorded_essid
         if cap_name:
-            handshake_store.add(bssid=bssid, essid=essid, channel=channel, cap=cap_name)
+            handshake_store.add(bssid=bssid, essid=recorded_essid, channel=channel, cap=cap_name)
             j.meta["cap"] = cap_name
         j.publish("\n[✓ WPA handshake captured — stopping capture]")
         # Stop in a separate task so the pump keeps draining stdout (no deadlock).
@@ -127,12 +137,33 @@ async def start_capture(body: CaptureStart) -> dict:
     return {"job_id": job.job_id, "ws": f"/ws/terminal/{job.job_id}"}
 
 
+_HS_COUNT_RE = re.compile(r"\((\d+)\s+handshake", re.IGNORECASE)
+
+
+async def _cap_has_handshake(cap_path) -> bool:
+    """aircrack-ng confirms a usable WPA handshake in the cap (robust fallback)."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *config.sudo_prefix(), "aircrack-ng", str(cap_path),
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+    except (asyncio.TimeoutError, FileNotFoundError, OSError):
+        with contextlib.suppress(Exception):
+            proc.kill()
+        return False
+    return any(int(n) > 0 for n in _HS_COUNT_RE.findall(out.decode(errors="replace")))
+
+
 @router.get("/capture/{job_id}/status")
-def capture_status(job_id: str) -> dict:
+async def capture_status(job_id: str) -> dict:
     """Parsed capture progress: data-packet count + connected clients + handshake.
 
-    Reads the live CSV airodump writes for this capture so the UI can show a
-    clean dashboard instead of raw scrollback.
+    Reads the live CSV airodump writes; additionally, if airodump's stdout
+    handshake notice was missed, falls back to a throttled aircrack-ng check on
+    the .cap so the handshake still surfaces live (no refresh/analyze needed).
     """
     job = manager.get(job_id)
     if job is None:
@@ -145,6 +176,22 @@ def capture_status(job_id: str) -> dict:
         {"station": c["station"], "power": c["power"], "packets": c["packets"]}
         for c in data["clients"] if (c.get("bssid") or "").upper() == bssid
     ]
+
+    # Fallback handshake detection: once there's data traffic and not already
+    # flagged, check the cap with aircrack-ng — throttled to ~4s between runs.
+    if prefix and not job.meta.get("handshake_captured") and ap and ap.get("data", 0) > 0:
+        now = time.monotonic()
+        if now - job.meta.get("_last_hs_check", 0.0) > 4.0:
+            job.meta["_last_hs_check"] = now
+            caps = sorted(config.CAPTURES_DIR.glob(f"{prefix}-*.cap"),
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+            if caps and await _cap_has_handshake(caps[0]):
+                job.meta["handshake_captured"] = True
+                rec_essid = (ap.get("essid") if ap else None) or job.meta.get("essid", "")
+                handshake_store.add(bssid=job.meta.get("bssid"), essid=rec_essid,
+                                    channel=job.meta.get("channel"), cap=caps[0].name)
+                job.meta["cap"] = caps[0].name
+
     # When a client associates/probes, airodump fills in a previously hidden
     # ESSID — surface it so the UI can show the revealed name.
     revealed = ap["essid"] if (ap and ap.get("essid")) else None

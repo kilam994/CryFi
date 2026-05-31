@@ -57,6 +57,17 @@ class HandshakeStore:
         live.sort(key=lambda i: i.get("captured_at", ""), reverse=True)
         return live
 
+    def get(self, cap: str) -> dict | None:
+        return next((i for i in self._items if i["cap"] == cap), None)
+
+    def update_essid(self, cap: str, essid: str) -> bool:
+        entry = self.get(cap)
+        if entry is None:
+            return False
+        entry["essid"] = essid
+        self._save()
+        return True
+
     def remove(self, cap: str) -> None:
         before = len(self._items)
         self._items = [i for i in self._items if i["cap"] != cap]
