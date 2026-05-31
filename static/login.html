@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CryFi — Sign in</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen flex items-center justify-center px-4">
+  <div id="toast-container" class="toast-wrap"></div>
+
+  <div class="w-full max-w-sm">
+    <div class="flex items-center justify-center gap-2 mb-6">
+      <span class="text-emerald-400 text-3xl">📡</span>
+      <h1 class="text-2xl font-semibold tracking-tight">CryFi</h1>
+    </div>
+
+    <form id="login-form" class="section-card space-y-3">
+      <h2 class="section-title mb-1">Sign in</h2>
+      <p class="text-xs text-slate-500 mb-2">Authorized network auditing — local access only.</p>
+
+      <label class="field">
+        <span>Username</span>
+        <input id="login-user" class="input w-full" autocomplete="username" value="Admin" />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input id="login-pass" type="password" class="input w-full" autocomplete="current-password" placeholder="••••••" />
+      </label>
+
+      <button class="btn-primary w-full" type="submit">Sign in</button>
+      <p id="login-error" class="text-xs text-red-400 min-h-[1rem]"></p>
+      <p class="text-[11px] text-slate-500">
+        Default credentials are <code>Admin</code> / <code>Admin</code> — change them via the
+        <code>CRYFI_USER</code> / <code>CRYFI_PASSWORD</code> environment variables.
+      </p>
+    </form>
+
+    <p class="text-center text-[11px] text-amber-400/80 mt-4">
+      ⚠️ For auditing networks you own or have written permission to test.
+    </p>
+  </div>
+
+  <script>
+    const form = document.getElementById("login-form");
+    const err = document.getElementById("login-error");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.textContent = "";
+      const username = document.getElementById("login-user").value.trim();
+      const password = document.getElementById("login-pass").value;
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          err.textContent = d.detail || "Sign in failed";
+          return;
+        }
+        window.location.href = "/";
+      } catch (_) {
+        err.textContent = "Network error";
+      }
+    });
+  </script>
+</body>
+</html>

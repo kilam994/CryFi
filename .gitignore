@@ -1,0 +1,42 @@
+# ---- Runtime data (NEVER commit) -----------------------------------------
+# Packet captures, generated/uploaded wordlists, and app state (hashed
+# password file). Keep the empty dirs via their .gitkeep placeholders.
+captures/*
+!captures/.gitkeep
+wordlists/*
+!wordlists/.gitkeep
+data/*
+!data/.gitkeep
+
+# Belt-and-suspenders: these artifacts must never be committed wherever they land.
+*.cap
+*.pcap
+*.netxml
+*.kismet.csv
+*.kismet.netxml
+*.log.csv
+cryfi-scan-*.csv
+capture-*.csv
+handshakes.json
+auth.json
+
+# ---- Python --------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# ---- OS / editor ---------------------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- Misc ----------------------------------------------------------------
+*.log
+.env

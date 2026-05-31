@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+captures/*
+wordlists/*
+!captures/.gitkeep
+!wordlists/.gitkeep
+.git/
+.DS_Store
+*.cap
+*.csv

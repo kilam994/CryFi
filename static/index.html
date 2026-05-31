@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CryFi</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: "class" };
+  </script>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+  <!-- Stacking notification toasts -->
+  <div id="toast-container" class="toast-wrap"></div>
+
+  <!-- Change-password modal -->
+  <div id="passwd-modal" class="modal-overlay hidden">
+    <form id="passwd-form" class="modal-card">
+      <h2 class="section-title mb-1">Change password</h2>
+      <p class="text-xs text-slate-500 mb-3">Signed in as <code id="pm-user"></code></p>
+      <label class="field"><span>Current password</span>
+        <input id="pm-current" type="password" class="input w-full" autocomplete="current-password" /></label>
+      <label class="field mt-2"><span>New password</span>
+        <input id="pm-new" type="password" class="input w-full" autocomplete="new-password" /></label>
+      <label class="field mt-2"><span>Confirm new password</span>
+        <input id="pm-confirm" type="password" class="input w-full" autocomplete="new-password" /></label>
+      <p id="pm-error" class="text-xs text-red-400 min-h-[1rem] mt-2"></p>
+      <div class="flex justify-end gap-2 mt-2">
+        <button type="button" id="pm-cancel" class="btn-secondary">Cancel</button>
+        <button type="submit" class="btn-primary">Update</button>
+      </div>
+    </form>
+  </div>
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-20">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <span class="text-emerald-400 text-xl">📡</span>
+        <h1 class="text-lg font-semibold tracking-tight">CryFi</h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <div id="health-pill" class="text-xs px-2 py-1 rounded-full bg-slate-800 text-slate-400">
+          connecting…
+        </div>
+        <span id="user-pill" class="text-xs text-slate-400 hidden">👤 <span id="user-name"></span></span>
+        <button id="passwd-btn" class="btn-secondary text-xs hidden" title="Change password">🔑</button>
+        <button id="logout-btn" class="btn-secondary text-xs hidden">Sign out</button>
+      </div>
+    </div>
+    <!-- Jump-to-section nav (smooth-scrolls; highlights the section in view) -->
+    <nav class="max-w-6xl mx-auto px-2 flex gap-1 overflow-x-auto text-sm" id="tabs">
+      <button data-tab="interfaces" class="tab-btn">1 · Interfaces</button>
+      <button data-tab="scan" class="tab-btn">2 · Scan</button>
+      <button data-tab="terminal" class="tab-btn">3 · Terminal</button>
+      <button data-tab="handshakes" class="tab-btn">4 · Handshakes <span id="hs-badge" class="hs-badge hidden">0</span></button>
+      <button data-tab="files" class="tab-btn">5 · Files</button>
+      <button data-tab="crack" class="tab-btn">6 · Crack</button>
+      <button data-tab="wordgen" class="tab-btn">7 · Wordgen</button>
+    </nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-5 space-y-6">
+
+    <!-- Authorization banner -->
+    <div class="text-xs rounded-lg border border-amber-600/40 bg-amber-500/10 text-amber-300 px-3 py-2">
+      ⚠️ For <strong>authorized</strong> auditing of networks you own or have written permission to test only.
+    </div>
+
+    <!-- Quick guide -->
+    <details class="guide" open>
+      <summary><span class="step-num">?</span> Quick guide — how it works</summary>
+      <ol class="guide-steps">
+        <li><b>Interfaces</b> — put your Wi-Fi adapter into <em>monitor mode</em> (needed to scan &amp; capture).</li>
+        <li><b>Scan</b> — pick the monitor interface and a band (2.4 / 5 GHz), Start Scan, then click a network row to load it as the target. Green badges = crackable WPA2.</li>
+        <li><b>Capture</b> — on the target, hit <em>Capture Handshake</em>; optionally <em>Deauth</em> a client to force a reconnect. The live panel shows data packets, clients, and a 🎉 when a handshake lands.</li>
+        <li><b>Wordgen</b> — build a wordlist (target words + mutations, or phone/charset patterns). It streams straight into your wordlists folder.</li>
+        <li><b>Crack</b> — pick the captured <code>.cap</code> + a wordlist → Analyze. The dashboard shows speed, the passphrase being tried, and the key if found.</li>
+        <li><b>Files / Handshakes</b> — manage captures (auto-flagged for handshakes) and wordlists (with line counts &amp; preview).</li>
+      </ol>
+      <p class="guide-tip">Tip: 5 GHz networks need a 5 GHz-capable adapter, and deauth is often blocked there — target the 2.4 GHz twin of the same router (same password).</p>
+    </details>
+
+    <!-- 1 · INTERFACES -->
+    <section id="sec-interfaces" data-panel="interfaces" class="section-card">
+      <div class="section-head">
+        <span class="step-num">1</span>
+        <h2 class="section-title">Network Interfaces</h2>
+        <button id="iface-refresh" class="btn-secondary ml-auto">Refresh</button>
+      </div>
+      <p class="section-hint">Put your adapter into monitor mode to enable scanning and capture.</p>
+      <div id="iface-list" class="grid gap-2 sm:grid-cols-2"></div>
+    </section>
+
+    <!-- 2 · SCAN & TARGET -->
+    <section id="sec-scan" data-panel="scan" class="section-card">
+      <div class="section-head">
+        <span class="step-num">2</span>
+        <h2 class="section-title">Scan &amp; Select Target</h2>
+      </div>
+      <div class="flex flex-wrap items-end gap-3 mb-2">
+        <label class="field">
+          <span>Monitor interface</span>
+          <select id="scan-iface" class="input"></select>
+        </label>
+        <label class="field">
+          <span>Band</span>
+          <select id="scan-band" class="input">
+            <option value="abg" selected>2.4 + 5 GHz</option>
+            <option value="bg">2.4 GHz only</option>
+            <option value="a">5 GHz only</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Channel (optional)</span>
+          <input id="scan-channel" class="input w-28" placeholder="e.g. 6 / 36" inputmode="numeric" />
+        </label>
+        <button id="scan-start" class="btn-primary">Start Scan</button>
+        <button id="scan-stop" class="btn-danger hidden">Stop Scan</button>
+        <span id="scan-status" class="text-xs text-slate-400 self-center"></span>
+      </div>
+      <p class="text-[11px] text-slate-500 mb-3">
+        Scanning both bands hops more channels, so any single AP refreshes a little slower. Pin a channel to focus.
+      </p>
+      <p id="scan-no-monitor" class="text-xs text-amber-400 mb-3 hidden">
+        No interface in monitor mode. Enable monitor mode in <strong>section 1</strong> first.
+      </p>
+
+      <!-- Scan results table (full width) -->
+      <div class="overflow-x-auto rounded-lg border border-slate-800">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900 text-slate-400 text-left">
+            <tr>
+              <th class="th">BSSID</th><th class="th">Network (ESSID)</th>
+              <th class="th">Channel</th><th class="th">Signal</th>
+              <th class="th">Encryption</th><th class="th">Data</th>
+            </tr>
+          </thead>
+          <tbody id="scan-rows" class="divide-y divide-slate-800"></tbody>
+        </table>
+        <p id="scan-empty" class="text-center text-slate-500 text-sm py-6">No access points yet.</p>
+      </div>
+
+      <!-- Target Properties (under the table) -->
+      <div class="rounded-lg border border-slate-800 p-3 mt-4">
+        <h3 class="font-medium text-slate-300 mb-2">Target Properties</h3>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-1 text-sm">
+          <div class="kv"><span>BSSID</span><code id="t-bssid">—</code></div>
+          <div class="kv"><span>ESSID</span><code id="t-essid">—</code></div>
+          <div class="kv"><span>Channel</span><code id="t-channel">—</code></div>
+          <div class="kv"><span>Encryption</span><code id="t-enc">—</code></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 mt-3">
+          <button id="t-capture" class="btn-primary" disabled>① Capture Handshake</button>
+          <button id="t-stop-capture" class="btn-danger hidden">Stop (capture + deauth)</button>
+          <div class="flex gap-1 items-center">
+            <input id="t-deauth-count" class="input w-16" value="5" inputmode="numeric" title="deauth count (0=continuous)" />
+            <button id="t-deauth" class="btn-danger" disabled>② Deauth</button>
+          </div>
+          <span id="t-capture-status" class="text-[11px] self-center"></span>
+        </div>
+        <p class="text-[11px] text-slate-500 mt-2">
+          Start the capture first; Deauth unlocks once it's running. On a successful
+          handshake the capture stops automatically and appears in <strong>section 4</strong>.
+        </p>
+      </div>
+
+      <!-- Parsed capture progress (under Target Properties) -->
+      <div id="capture-dash" class="crack-dash hidden mt-3">
+        <div class="crack-meta">
+          <span id="cap-target" class="text-slate-400"></span>
+          <span id="cap-state" class="crack-state">capturing</span>
+        </div>
+        <div class="crack-stats">
+          <div><span class="crack-k">Data pkts</span><b id="cap-data">0</b></div>
+          <div><span class="crack-k">Beacons</span><b id="cap-beacons">0</b></div>
+          <div><span class="crack-k">Clients</span><b id="cap-clients">0</b></div>
+          <div><span class="crack-k">Elapsed</span><b id="cap-elapsed">0s</b></div>
+        </div>
+        <div id="cap-clients-list" class="cap-clients"></div>
+        <div id="cap-found" class="crack-found hidden"></div>
+        <details class="crack-raw">
+          <summary>Raw capture output</summary>
+          <pre id="capture-out" class="terminal mt-2"></pre>
+        </details>
+      </div>
+    </section>
+
+    <!-- 3 · LIVE TERMINAL -->
+    <section id="sec-terminal" data-panel="terminal" class="section-card">
+      <div class="section-head">
+        <span class="step-num">3</span>
+        <h2 class="section-title">Live Terminal</h2>
+        <div class="flex items-center gap-2 ml-auto">
+          <span id="term-job" class="text-xs text-slate-400"></span>
+          <button id="term-stop" class="btn-danger hidden">Stop Job</button>
+          <button id="term-clear" class="btn-secondary">Clear</button>
+        </div>
+      </div>
+      <p class="section-hint">Live stdout of the running capture / deauth / crack job.</p>
+      <pre id="terminal" class="terminal"></pre>
+    </section>
+
+    <!-- 4 · HANDSHAKES -->
+    <section id="sec-handshakes" data-panel="handshakes" class="section-card">
+      <div class="section-head">
+        <span class="step-num">4</span>
+        <h2 class="section-title">Captured Handshakes</h2>
+        <button id="hs-refresh" class="btn-secondary ml-auto">Refresh</button>
+      </div>
+      <p class="section-hint">
+        Each entry holds a verified WPA handshake. Pick one to launch a dictionary attack (jumps to section 6).
+      </p>
+      <div id="hs-list" class="space-y-2"></div>
+    </section>
+
+    <!-- 5 · FILES -->
+    <section id="sec-files" data-panel="files" class="section-card space-y-5">
+      <div class="section-head">
+        <span class="step-num">5</span>
+        <h2 class="section-title">Files</h2>
+        <button id="cap-refresh" class="btn-secondary ml-auto">Refresh</button>
+      </div>
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <h3 class="font-medium text-slate-300 mr-auto">Capture Files</h3>
+          <button id="cap-analyze" class="btn-secondary">Analyze handshakes</button>
+          <button id="cap-clean" class="btn-secondary" title="Delete captures with no WPA handshake">🧹 Clean (no-handshake)</button>
+          <button id="cap-del-selected" class="btn-danger">Delete selected</button>
+          <button id="cap-del-all" class="btn-danger">Delete all</button>
+        </div>
+        <label class="wg-check text-xs mb-2">
+          <input type="checkbox" id="cap-select-all" class="accent-emerald-500"> select all
+        </label>
+        <div id="cap-list" class="space-y-1"></div>
+      </div>
+      <div>
+        <h3 class="font-medium text-slate-300 mb-2">Wordlists</h3>
+        <form id="wl-form" class="flex flex-wrap items-center gap-2 mb-3">
+          <input id="wl-file" type="file" accept=".txt"
+                 class="text-sm file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:bg-emerald-600 file:text-white" />
+          <button class="btn-primary" type="submit">Upload</button>
+          <span id="wl-status" class="text-xs text-slate-400"></span>
+        </form>
+        <div id="wl-list" class="space-y-1"></div>
+      </div>
+    </section>
+
+    <!-- 6 · CRACK -->
+    <section id="sec-crack" data-panel="crack" class="section-card">
+      <div class="section-head">
+        <span class="step-num">6</span>
+        <h2 class="section-title">Crack Handshake</h2>
+      </div>
+      <div class="flex flex-wrap items-end gap-3 mb-3">
+        <label class="field">
+          <span>Capture (.cap)</span>
+          <select id="crack-cap" class="input min-w-52"></select>
+        </label>
+        <label class="field">
+          <span>Wordlist (.txt)</span>
+          <select id="crack-wl" class="input min-w-52"></select>
+        </label>
+        <label class="field">
+          <span>BSSID (optional)</span>
+          <input id="crack-bssid" class="input w-44" placeholder="AA:BB:CC:DD:EE:FF" />
+        </label>
+        <button id="crack-start" class="btn-primary">Analyze</button>
+        <button id="crack-stop" class="btn-danger hidden">Stop</button>
+      </div>
+
+      <!-- Live status dashboard (replaces raw scrollback) -->
+      <div id="crack-dash" class="crack-dash hidden">
+        <div class="crack-meta">
+          <span id="crack-target" class="text-slate-400"></span>
+          <span id="crack-state" class="crack-state">running</span>
+        </div>
+        <div class="crack-progress-wrap"><div id="crack-bar" class="crack-bar"></div></div>
+        <div class="crack-stats">
+          <div><span class="crack-k">Speed</span><b id="crack-speed">—</b><span class="crack-u"> k/s</span></div>
+          <div><span class="crack-k">Tested</span><b id="crack-tested">—</b></div>
+          <div><span class="crack-k">Progress</span><b id="crack-percent">—</b></div>
+        </div>
+        <div class="crack-now">testing&nbsp;→&nbsp;<code id="crack-current">…</code></div>
+        <div id="crack-found" class="crack-found hidden"></div>
+      </div>
+
+      <details class="crack-raw">
+        <summary>Raw aircrack-ng output</summary>
+        <pre id="crack-out" class="terminal mt-2"></pre>
+      </details>
+    </section>
+
+    <!-- 7 · WORDLIST STUDIO -->
+    <section id="sec-wordgen" data-panel="wordgen" class="section-card">
+      <div class="section-head">
+        <span class="step-num">7</span>
+        <h2 class="section-title">Wordlist Studio</h2>
+      </div>
+      <p class="section-hint">
+        Describe the target, choose mutations, optionally add number patterns — it all merges into one
+        deduplicated <code>.txt</code> in your wordlists folder, ready for section 6.
+      </p>
+
+      <!-- A · TARGET WORDS -->
+      <div class="wg-group">
+        <div class="wg-group-title">Target words <span>— names, pet, company, places… anything tied to the target</span></div>
+        <div class="grid sm:grid-cols-3 gap-2">
+          <label class="field"><span>First name</span><input class="input wg-word" placeholder="John" /></label>
+          <label class="field"><span>Last name</span><input class="input wg-word" placeholder="Doe" /></label>
+          <label class="field"><span>Nickname</span><input class="input wg-word" placeholder="JD" /></label>
+          <label class="field"><span>Partner</span><input class="input wg-word" placeholder="Jane" /></label>
+          <label class="field"><span>Pet</span><input class="input wg-word" placeholder="Rex" /></label>
+          <label class="field"><span>Company / SSID</span><input class="input wg-word" placeholder="Acme" /></label>
+        </div>
+        <label class="field mt-2"><span>More words (one per line or comma-separated)</span>
+          <textarea id="wg-words" class="input w-full h-16" placeholder="hometown, street, sports team, kids…"></textarea></label>
+        <div class="grid sm:grid-cols-2 gap-2 mt-2">
+          <label class="field"><span>Years / dates (comma)</span><input id="wg-years" class="input w-full" placeholder="1990, 2010, 2024" /></label>
+          <label class="field"><span>Lucky numbers (comma)</span><input id="wg-numbers" class="input w-full" placeholder="7, 13, 69" /></label>
+        </div>
+      </div>
+
+      <!-- B · MUTATIONS -->
+      <div class="wg-group">
+        <div class="wg-group-title">Mutations <span>— how each word is transformed</span></div>
+        <div class="flex flex-wrap gap-3 text-sm">
+          <label class="wg-check"><input type="checkbox" id="wg-cases" class="accent-emerald-500" checked> aA case variations</label>
+          <label class="wg-check"><input type="checkbox" id="wg-leet" class="accent-emerald-500"> l33t speak</label>
+          <label class="wg-check"><input type="checkbox" id="wg-reverse" class="accent-emerald-500"> reversed</label>
+          <label class="wg-check"><input type="checkbox" id="wg-append" class="accent-emerald-500" checked> append numbers/years</label>
+          <label class="wg-check"><input type="checkbox" id="wg-suffix" class="accent-emerald-500" checked> common suffixes (123, !, …)</label>
+        </div>
+        <div class="flex flex-wrap items-end gap-3 mt-3">
+          <label class="field"><span>Combine · min words</span><input id="wg-min" class="input w-20" value="1" inputmode="numeric" /></label>
+          <label class="field"><span>max words</span><input id="wg-max" class="input w-20" value="2" inputmode="numeric" /></label>
+          <label class="field grow"><span>Join separators (comma-separated; blank = none)</span>
+            <input id="wg-seps" class="input w-full" value=", -, _, ." /></label>
+        </div>
+      </div>
+
+      <!-- C · NUMBER PATTERNS (optional add-ons) -->
+      <div class="wg-group">
+        <div class="wg-group-title">Number &amp; charset patterns <span>— optional, merged in</span></div>
+
+        <label class="wg-check wg-addon-head"><input type="checkbox" id="wg-en-phone" class="wg-addon accent-emerald-500"> 📞 Phone numbers</label>
+        <div class="wg-addon-body" data-addon="phone">
+          <p class="wg-help"><code>X</code> = any digit 0–9; literals (country code, separators) are kept.</p>
+          <div class="flex flex-wrap items-end gap-3">
+            <label class="field grow"><span>Mask</span><input id="wg-phone-mask" class="input w-full" placeholder="+1212XXXXXXX" /></label>
+            <label class="wg-check self-center"><input id="wg-phone-strip" type="checkbox" class="accent-emerald-500"> strip non-digits</label>
+          </div>
+          <div class="flex flex-wrap items-end gap-2 mt-2">
+            <label class="field"><span>prefix</span><input id="wg-phone-prefix" class="input w-36" placeholder="+1212" /></label>
+            <label class="field"><span># of X</span><input id="wg-phone-xcount" class="input w-20" value="7" inputmode="numeric" /></label>
+            <button id="wg-phone-build" class="btn-secondary">Build mask</button>
+          </div>
+        </div>
+
+        <label class="wg-check wg-addon-head mt-2"><input type="checkbox" id="wg-en-charset" class="wg-addon accent-emerald-500"> 🔤 Charset brute-force</label>
+        <div class="wg-addon-body" data-addon="charset">
+          <p class="wg-help">Every combination of the selected characters — watch the estimate, it explodes fast.</p>
+          <div class="flex flex-wrap gap-3 mb-2 text-sm">
+            <label class="wg-check"><input type="checkbox" class="wg-cs accent-emerald-500" value="lower" checked> a–z</label>
+            <label class="wg-check"><input type="checkbox" class="wg-cs accent-emerald-500" value="upper"> A–Z</label>
+            <label class="wg-check"><input type="checkbox" class="wg-cs accent-emerald-500" value="digits" checked> 0–9</label>
+            <label class="wg-check"><input type="checkbox" class="wg-cs accent-emerald-500" value="special"> !@#$…</label>
+            <label class="wg-check"><input type="checkbox" class="wg-cs accent-emerald-500" value="space"> space</label>
+          </div>
+          <div class="flex flex-wrap items-end gap-3">
+            <label class="field"><span>Custom chars</span><input id="wg-cs-custom" class="input w-36" placeholder="éñ_…" /></label>
+            <label class="field"><span>Min len</span><input id="wg-cs-min" class="input w-20" value="6" inputmode="numeric" /></label>
+            <label class="field"><span>Max len</span><input id="wg-cs-max" class="input w-20" value="8" inputmode="numeric" /></label>
+          </div>
+        </div>
+      </div>
+
+      <!-- D · OUTPUT -->
+      <div class="wg-group">
+        <div class="wg-group-title">Output <span>— large lists stream to split files; memory stays flat</span></div>
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="field grow"><span>Filename</span>
+            <input id="wg-filename" class="input w-full" placeholder="wordlist.txt" /></label>
+          <label class="field"><span>Max lines</span>
+            <input id="wg-target" class="input w-36" value="5000000" inputmode="numeric" /></label>
+          <label class="field"><span>Split: lines/file (0 = one)</span>
+            <input id="wg-split" class="input w-36" value="25000000" inputmode="numeric" /></label>
+          <label class="wg-check self-center"><input type="checkbox" id="wg-dedupe" class="accent-emerald-500" checked> dedupe</label>
+        </div>
+        <div class="flex flex-wrap gap-2 mt-2 text-xs">
+          <span class="text-slate-500 self-center">quick max:</span>
+          <button class="wg-preset btn-secondary" data-n="1000000">1M</button>
+          <button class="wg-preset btn-secondary" data-n="10000000">10M</button>
+          <button class="wg-preset btn-secondary" data-n="100000000">100M</button>
+          <button class="wg-preset btn-secondary" data-n="1000000000">1B</button>
+          <button class="wg-preset btn-secondary" data-n="1000000000000">1T</button>
+        </div>
+        <p class="wg-help mt-2">Dedupe uses memory (auto-capped at 20M unique, then streams on without it). Turn it off for the largest lists — charset/phone are unique anyway.</p>
+      </div>
+
+      <div class="wg-output">
+        <button id="wg-estimate" class="btn-secondary">Estimate</button>
+        <button id="wg-preview" class="btn-secondary">Preview</button>
+        <button id="wg-generate" class="btn-primary">Generate</button>
+        <button id="wg-stop" class="btn-danger hidden">Stop</button>
+      </div>
+      <div id="wg-result" class="wg-result"></div>
+
+      <!-- live generation progress -->
+      <div id="wg-progress" class="crack-dash hidden">
+        <div class="crack-meta">
+          <span id="wg-prog-file" class="text-slate-400"></span>
+          <span id="wg-prog-state" class="crack-state">running</span>
+        </div>
+        <div class="crack-stats">
+          <div><span class="crack-k">Lines</span><b id="wg-prog-lines">0</b></div>
+          <div><span class="crack-k">Size</span><b id="wg-prog-bytes">0</b></div>
+          <div><span class="crack-k">Rate</span><b id="wg-prog-rate">0</b><span class="crack-u"> /s</span></div>
+          <div><span class="crack-k">Files</span><b id="wg-prog-files">0</b></div>
+        </div>
+        <div class="crack-progress-wrap"><div id="wg-prog-bar" class="crack-bar"></div></div>
+      </div>
+
+      <pre id="wg-preview-box" class="terminal hidden" style="height:11rem"></pre>
+    </section>
+
+  </main>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/ws.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

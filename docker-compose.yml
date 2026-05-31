@@ -1,0 +1,59 @@
+# CryFi — local deployment for a headless Linux host (e.g. ZimaBoard).
+#
+# The container needs direct access to the host Wi-Fi hardware to put adapters
+# into monitor mode and run the aircrack-ng suite. That requires:
+#   - network_mode: host   -> share the host network stack & interfaces
+#   - privileged: true     -> raw access to the wireless device / netlink
+#   - NET_ADMIN capability  -> change interface mode (belt-and-suspenders)
+#
+# Scope note: privileged + host networking grants broad host access. Run this
+# only on a trusted local box you control, on a trusted LAN, for authorized
+# auditing. The UI binds to port 8000 on the host.
+
+services:
+  cryfi:
+    build: .
+    container_name: cryfi
+    restart: unless-stopped
+
+    # Run a tiny init (tini) as PID 1 so orphaned airodump/aireplay children
+    # are reaped instead of accumulating as <defunct> zombies. uvicorn as PID 1
+    # does not reap, which is what leaked zombies on every scan stop.
+    init: true
+
+    # Required for Wi-Fi hardware control from inside the container.
+    network_mode: "host"
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+    environment:
+      # --- Login (set real values in .env — see .env.example) ---------
+      # Pulled from .env / shell; safe defaults so it still runs without one.
+      - CRYFI_USER=${CRYFI_USER:-Admin}
+      - CRYFI_PASSWORD=${CRYFI_PASSWORD:-Admin}
+      - CRYFI_SESSION_HOURS=${CRYFI_SESSION_HOURS:-12}
+
+      # --- Execution --------------------------------------------------
+      - CRYFI_USE_SUDO=0                   # root in-container, so no sudo
+      - CRYFI_CAPTURES_DIR=/app/captures   # where .cap files are written
+      - CRYFI_WORDLISTS_DIR=/app/wordlists # where wordlists live
+      - CRYFI_DATA_DIR=/app/data           # app state (changed-password file)
+      - CRYFI_TERM_GRACE=3.0               # seconds: SIGINT→SIGTERM→SIGKILL
+      - CRYFI_SCAN_POLL_MS=2000            # scan-table refresh cadence (ms)
+
+      # --- Uploads / generator limits --------------------------------
+      - CRYFI_MAX_WORDLIST_BYTES=524288000         # 500 MB upload cap
+      - CRYFI_WORDGEN_MAX_TARGET=1000000000000     # max lines per job (1T)
+      - CRYFI_WORDGEN_DEFAULT_TARGET=5000000       # default when unspecified
+      - CRYFI_WORDGEN_DEDUPE_CAP=20000000          # in-memory dedupe ceiling
+      - CRYFI_WORDGEN_MIN_FREE_BYTES=524288000     # stop gen below 500 MB free
+
+    volumes:
+      # Persist captures, wordlists and app state on the host.
+      - ./captures:/app/captures
+      - ./wordlists:/app/wordlists
+      - ./data:/app/data
+      # Optional: expose host wireless firmware/drivers if the base image lacks them.
+      # - /lib/firmware:/lib/firmware:ro
