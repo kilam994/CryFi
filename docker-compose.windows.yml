@@ -1,0 +1,38 @@
+# CryFi on Windows / macOS (Docker Desktop) — UI ONLY.
+#
+# IMPORTANT: Wi-Fi features (scan, capture, deauth, monitor mode) DO NOT WORK
+# here. Docker Desktop runs in a Linux VM with no access to the host Wi-Fi
+# adapter, and Windows/macOS can't do monitor mode. This is for viewing the UI
+# and working on the non-hardware parts (wordlist generator, layout, etc.).
+#
+# Run with:   docker compose -f docker-compose.windows.yml up --build -d
+# Then open:  http://localhost:8000   (login Admin / Admin)
+#
+# For real use, run the normal docker-compose.yml on Linux with a
+# monitor-mode-capable Wi-Fi adapter.
+
+services:
+  cryfi:
+    build: .
+    container_name: cryfi
+    restart: unless-stopped
+    init: true
+
+    # Published port instead of host networking (host mode doesn't reach the
+    # Windows/macOS host and ignores port mapping under Docker Desktop).
+    ports:
+      - "8000:8000"
+
+    environment:
+      - CRYFI_USER=${CRYFI_USER:-Admin}
+      - CRYFI_PASSWORD=${CRYFI_PASSWORD:-Admin}
+      - CRYFI_SESSION_HOURS=${CRYFI_SESSION_HOURS:-12}
+      - CRYFI_USE_SUDO=0
+      - CRYFI_CAPTURES_DIR=/app/captures
+      - CRYFI_WORDLISTS_DIR=/app/wordlists
+      - CRYFI_DATA_DIR=/app/data
+
+    volumes:
+      - ./captures:/app/captures
+      - ./wordlists:/app/wordlists
+      - ./data:/app/data
