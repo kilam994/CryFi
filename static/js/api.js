@@ -32,6 +32,7 @@ const API = {
   interfaces() { return this.get("/api/interfaces"); },
   monitorStart(iface) { return this.post(`/api/interfaces/${encodeURIComponent(iface)}/monitor/start`); },
   monitorStop(iface) { return this.post(`/api/interfaces/${encodeURIComponent(iface)}/monitor/stop`); },
+  regulatory() { return this.get("/api/regulatory"); },
 
   scanStart(payload) { return this.post("/api/scan/start", payload); },
   scanStop() { return this.post("/api/scan/stop"); },

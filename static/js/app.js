@@ -5,17 +5,15 @@
   let scanPollTimer = null;
   let scanPollMs = 2000;
   let selectedTarget = null;
-  let terminal = null; // TerminalStream for the Live Terminal tab
-  let crackStream = null; // TerminalStream for the Crack tab
-  let activeJobId = null;
   let _apsCache = []; // last rendered AP list (for highlight refresh)
+  let regChannels = {}; // per-channel regulatory map (channel -> {tx_ok,...})
+  let regInfo = null;   // {country, self_managed, tx_blocked_channels}
 
   // Capture/deauth workflow state
   let captureActive = false;
   let captureJobId = null;
   let captureTargetSnap = null; // frozen target while capturing
   let capturePollTimer = null;
-  let captureStream = null;     // TerminalStream for the raw capture output
   let captureStartMs = 0;
   let revealMode = false;       // true when listening to uncover a hidden SSID
   let revealedDone = false;
@@ -410,23 +408,52 @@
       captureStatus(revealMode
         ? "🔓 Listening to reveal the hidden SSID — deauth a client to speed it up…"
         : "📡 Capturing — waiting for handshake…", "warn");
-      // Nice parsed dashboard + raw stream into the scan section.
+      // Parsed dashboard + a clean airodump-style live table (built from the
+      // CSV) — airodump runs with --background so it doesn't flood a raw stream.
       showCaptureDash(captureTargetSnap);
-      if (!captureStream) captureStream = new TerminalStream($("#capture-out"));
-      captureStream.clear();
-      captureStream.connect(res.job_id);
+      $("#capture-out").textContent = "Waiting for airodump data…";
       beginCapturePoll();
       toast(`${revealMode ? "Reveal" : "Capture"} started → ${captureTargetSnap.bssid}`, "info");
-      if (is5GHz(captureTargetSnap.channel)) {
-        captureStatus("5 GHz — deauth often blocked; wait for a natural reconnect.", "warn");
-        toast("5 GHz target: deauth may not transmit (regulatory). The 2.4 GHz version of the same router usually shares the password.", "info", 9000);
+      if (txBlocked(captureTargetSnap.channel)) {
+        const ch = captureTargetSnap.channel, why = txBlockReason(ch);
+        captureStatus(`Ch ${ch}: ${why} — deauth won't go out; wait for a natural reconnect.`, "warn");
+        toast(`Channel ${ch} is ${why} in regdomain ${regInfo ? regInfo.country : "?"} — deauth blocked. Listening passively; the 2.4 GHz twin usually shares the password.`, "info", 9000);
       }
     } catch (e) { toast(e.message, true); captureStatus(e.message, "warn"); }
   }
 
-  // 5 GHz channels (≥ 36) are frequently no-IR / DFS, where many adapters
-  // can't transmit deauth frames.
+  // 5 GHz channels (≥ 36) are frequently no-IR / DFS — fallback heuristic only.
   function is5GHz(ch) { return Number(ch) >= 36; }
+
+  // --- Regulatory awareness -----------------------------------------------
+  async function loadRegulatory() {
+    try {
+      const r = await API.regulatory();
+      regInfo = r;
+      regChannels = r.channels || {};
+      const blocked = r.tx_blocked_channels || [];
+      const sm = r.self_managed ? " · self-managed" : "";
+      const summary = blocked.length > 12
+        ? `${blocked.length} channels (mostly 5 GHz DFS/no-IR)`
+        : blocked.join(", ");
+      const el = $("#reg-info");
+      el.innerHTML = blocked.length
+        ? `📍 Regulatory domain <b>${escapeHtml(r.country)}</b>${sm}: deauth (transmit) blocked on <b title="${blocked.join(", ")}">${summary}</b> — scanning/capture still works there (passive).`
+        : `📍 Regulatory domain <b>${escapeHtml(r.country)}</b>${sm}: transmit allowed on all detected channels.`;
+      el.classList.remove("hidden");
+    } catch (_) { /* iw not available — fall back to the heuristic */ }
+  }
+
+  // True if the regdomain forbids transmitting (deauth) on this channel.
+  function txBlocked(ch) {
+    const c = regChannels[String(ch)];
+    if (c) return !c.tx_ok;
+    return is5GHz(ch);  // heuristic fallback when reg data is unavailable
+  }
+  function txBlockReason(ch) {
+    const c = regChannels[String(ch)];
+    return (c && c.reason) ? c.reason : "regulatory restriction";
+  }
 
   // --- Capture dashboard (parsed progress under Target Properties) --------
   function showCaptureDash(t) {
@@ -459,6 +486,23 @@
       .map((c) => `<span class="cap-client" title="${c.power} dBm · ${c.packets} pkts">${escapeHtml(c.station)}</span>`)
       .join("");
     $("#cap-elapsed").textContent = Math.round((Date.now() - captureStartMs) / 1000) + "s";
+    renderCaptureTable(st);
+  }
+
+  // Clean airodump-style table, rebuilt in place each poll (no raw flood).
+  function renderCaptureTable(st) {
+    const pad = (s, n) => String(s ?? "").padEnd(n).slice(0, n);
+    const essid = st.revealed_essid || st.essid || "<hidden>";
+    const rows = [
+      pad("BSSID", 19) + pad("PWR", 5) + pad("Beacons", 9) + pad("#Data", 8) + pad("CH", 4) + "ESSID",
+      pad(st.bssid, 19) + pad("", 5) + pad(st.beacons || 0, 9) + pad(st.data || 0, 8) + pad(st.channel, 4) + essid,
+      "",
+      pad("STATION", 19) + pad("PWR", 6) + "Packets",
+    ];
+    (st.clients || []).forEach((c) =>
+      rows.push(pad(c.station, 19) + pad(c.power, 6) + (c.packets ?? "")));
+    if (!(st.clients || []).length) rows.push("(no clients seen yet)");
+    $("#capture-out").textContent = rows.join("\n");
   }
 
   // Reset all capture/deauth UI to idle. Synchronous — never awaits the network.
@@ -467,7 +511,6 @@
     captureActive = false;
     captureJobId = null;
     if (!revealedDone) revealMode = false;  // clear unless a reveal just succeeded
-    if (captureStream) captureStream.close();
     setCaptureUiState();
   }
 
@@ -481,7 +524,7 @@
   // User pressed Stop — kill EVERYTHING (capture + all deauths) and reset the
   // UI immediately, then confirm the kills in the background.
   function stopAll() {
-    const ids = [...runningJobs, captureJobId, activeJobId];
+    const ids = [...runningJobs, captureJobId];
     runningJobs.clear();
     resetCaptureUi();
     captureStatus("Stopped.", null);
@@ -578,40 +621,12 @@
     // Toast immediately — independent of when the backend confirms the spawn.
     toast(`Deauth #${n} → ${t.bssid} · ${label}`, "info");
     captureStatus(`📡 Capturing… ${n} deauth(s) sent, waiting for handshake…`, "warn");
-    if (is5GHz(t.channel)) {
-      toast("⚠️ 5 GHz (ch " + t.channel + "): the radio likely can't transmit deauth here (regulatory no-IR). Try the 2.4 GHz SSID.", true, 9000);
+    if (txBlocked(t.channel)) {
+      toast(`⚠️ Channel ${t.channel}: ${txBlockReason(t.channel)} (regdomain ${regInfo ? regInfo.country : "?"}) — deauth frames likely won't transmit. Try the 2.4 GHz SSID.`, true, 9000);
     }
     API.deauth({ iface, bssid: t.bssid, channel: String(t.channel), count })
       .then((res) => { if (res && res.job_id) runningJobs.add(res.job_id); })
       .catch((e) => toast(`Deauth #${n} failed: ${e.message}`, true));
-  }
-
-  // --- Live Terminal ------------------------------------------------------
-  function attachTerminal(jobId, kind) {
-    activeJobId = jobId;
-    $("#term-job").textContent = `${kind} · ${jobId}`;
-    $("#term-stop").classList.remove("hidden");
-    if (!terminal) {
-      terminal = new TerminalStream($("#terminal"), () => {
-        $("#term-stop").classList.add("hidden");
-      });
-    }
-    terminal.clear();
-    terminal.connect(jobId);
-  }
-
-  // Live Terminal "Stop Job": if it's the capture, stop everything and reset
-  // the capture panel too; otherwise just stop the focused job.
-  function stopActiveJob() {
-    if (captureActive && (activeJobId === captureJobId || !activeJobId)) {
-      stopAll();
-      return;
-    }
-    const id = activeJobId;
-    activeJobId = null;
-    if (terminal) terminal.close();
-    $("#term-stop").classList.add("hidden");
-    killJobs([id]).then((n) => { if (n) toast("Stopped job", "info"); });
   }
 
   // --- Files --------------------------------------------------------------
@@ -885,9 +900,9 @@
       $("#crack-dash").classList.remove("hidden");
       $("#crack-stop").classList.remove("hidden");
       $("#crack-start").disabled = true;
-      if (!crackStream) crackStream = new TerminalStream($("#crack-out"));
-      crackStream.clear();
-      crackStream.connect(res.job_id);
+      // Render a clean aircrack-style view from parsed status (in place), rather
+      // than streaming the raw ANSI TUI which piles up on every redraw.
+      $("#crack-out").textContent = "Starting aircrack-ng…";
       beginCrackPoll();
     } catch (e) { toast(e.message, true); }
   }
@@ -924,6 +939,25 @@
       $("#crack-bar").style.width = Math.min(100, meta.percent) + "%";
     }
     if (meta.current) $("#crack-current").textContent = meta.current;
+    renderCrackText(meta);
+  }
+
+  // Clean aircrack-ng-style text view, rebuilt in place each poll.
+  function renderCrackText(meta) {
+    const t = meta.tested != null ? Number(meta.tested).toLocaleString() : "—";
+    const tot = meta.total ? " / " + Number(meta.total).toLocaleString() : "";
+    const spd = meta.speed != null ? Number(meta.speed).toLocaleString() : "—";
+    const pct = meta.percent != null ? ` (${meta.percent}%)` : "";
+    const rows = ["                        Aircrack-ng", ""];
+    if (meta.status === "found" && meta.key) {
+      rows.push(`      KEY FOUND! [ ${meta.key} ]`);
+    } else {
+      rows.push(`      [keys tested] ${t}${tot}${pct}`);
+      rows.push(`      [speed]       ${spd} k/s`);
+      rows.push("");
+      rows.push(`      Current passphrase:  ${meta.current || "…"}`);
+    }
+    $("#crack-out").textContent = rows.join("\n");
   }
 
   function crackCelebrate(key) {
@@ -943,7 +977,6 @@
     endCrackPoll();
     $("#crack-stop").classList.add("hidden");
     $("#crack-start").disabled = false;
-    if (crackStream) crackStream.close();
     const status = meta && meta.status;
     if (status === "found" && meta.key) {
       setCrackState("found");
@@ -996,7 +1029,6 @@
     $("#crack-stop").classList.add("hidden");
     $("#crack-start").disabled = false;
     setCrackState("stopped");
-    if (crackStream) crackStream.close();
     try { await API.jobStop(id); } catch (_) {}
     toast("Crack stopped", "info");
   }
@@ -1237,8 +1269,6 @@
     $("#t-reveal").addEventListener("click", revealTarget);
     $("#t-stop-capture").addEventListener("click", stopAll);
     $("#t-deauth").addEventListener("click", deauthTarget);
-    $("#term-stop").addEventListener("click", stopActiveJob);
-    $("#term-clear").addEventListener("click", () => terminal && terminal.clear());
     $("#cap-refresh").addEventListener("click", () => { loadCaptures(); loadWordlists(); });
     $("#cap-analyze").addEventListener("click", analyzeCaptures);
     $("#cap-clean").addEventListener("click", cleanCaptures);
@@ -1278,6 +1308,7 @@
     loadCaptures();
     loadWordlists();
     loadCrackOptions();
+    loadRegulatory();
     setupWordgen();
     setupSectionSpy();
   }

@@ -52,11 +52,10 @@
     <nav class="max-w-6xl mx-auto px-2 flex gap-1 overflow-x-auto text-sm" id="tabs">
       <button data-tab="interfaces" class="tab-btn">1 · Interfaces</button>
       <button data-tab="scan" class="tab-btn">2 · Scan</button>
-      <button data-tab="terminal" class="tab-btn">3 · Terminal</button>
-      <button data-tab="handshakes" class="tab-btn">4 · Handshakes <span id="hs-badge" class="hs-badge hidden">0</span></button>
-      <button data-tab="files" class="tab-btn">5 · Files</button>
-      <button data-tab="crack" class="tab-btn">6 · Crack</button>
-      <button data-tab="wordgen" class="tab-btn">7 · Wordgen</button>
+      <button data-tab="handshakes" class="tab-btn">3 · Handshakes <span id="hs-badge" class="hs-badge hidden">0</span></button>
+      <button data-tab="files" class="tab-btn">4 · Files</button>
+      <button data-tab="crack" class="tab-btn">5 · Crack</button>
+      <button data-tab="wordgen" class="tab-btn">6 · Wordgen</button>
     </nav>
   </header>
 
@@ -89,6 +88,7 @@
         <button id="iface-refresh" class="btn-secondary ml-auto">Refresh</button>
       </div>
       <p class="section-hint">Put your adapter into monitor mode to enable scanning and capture.</p>
+      <div id="reg-info" class="reg-info hidden"></div>
       <div id="iface-list" class="grid gap-2 sm:grid-cols-2"></div>
     </section>
 
@@ -162,7 +162,7 @@
         </div>
         <p class="text-[11px] text-slate-500 mt-2">
           Start the capture first; Deauth unlocks once it's running. On a successful
-          handshake the capture stops automatically and appears in <strong>section 4</strong>.
+          handshake the capture stops automatically and appears in <strong>section 3</strong>.
         </p>
       </div>
 
@@ -180,37 +180,22 @@
         </div>
         <div id="cap-clients-list" class="cap-clients"></div>
         <div id="cap-found" class="crack-found hidden"></div>
-        <details class="crack-raw">
-          <summary>Raw capture output</summary>
+        <details class="crack-raw" open>
+          <summary>Live capture table (airodump view)</summary>
           <pre id="capture-out" class="terminal mt-2"></pre>
         </details>
       </div>
     </section>
 
-    <!-- 3 · LIVE TERMINAL -->
-    <section id="sec-terminal" data-panel="terminal" class="section-card">
-      <div class="section-head">
-        <span class="step-num">3</span>
-        <h2 class="section-title">Live Terminal</h2>
-        <div class="flex items-center gap-2 ml-auto">
-          <span id="term-job" class="text-xs text-slate-400"></span>
-          <button id="term-stop" class="btn-danger hidden">Stop Job</button>
-          <button id="term-clear" class="btn-secondary">Clear</button>
-        </div>
-      </div>
-      <p class="section-hint">Live stdout of the running capture / deauth / crack job.</p>
-      <pre id="terminal" class="terminal"></pre>
-    </section>
-
     <!-- 4 · HANDSHAKES -->
     <section id="sec-handshakes" data-panel="handshakes" class="section-card">
       <div class="section-head">
-        <span class="step-num">4</span>
+        <span class="step-num">3</span>
         <h2 class="section-title">Captured Handshakes</h2>
         <button id="hs-refresh" class="btn-secondary ml-auto">Refresh</button>
       </div>
       <p class="section-hint">
-        Each entry holds a verified WPA handshake. Pick one to launch a dictionary attack (jumps to section 6).
+        Each entry holds a verified WPA handshake. Pick one to launch a dictionary attack (jumps to section 5).
       </p>
       <div id="hs-list" class="space-y-2"></div>
     </section>
@@ -218,7 +203,7 @@
     <!-- 5 · FILES -->
     <section id="sec-files" data-panel="files" class="section-card space-y-5">
       <div class="section-head">
-        <span class="step-num">5</span>
+        <span class="step-num">4</span>
         <h2 class="section-title">Files</h2>
         <button id="cap-refresh" class="btn-secondary ml-auto">Refresh</button>
       </div>
@@ -250,7 +235,7 @@
     <!-- 6 · CRACK -->
     <section id="sec-crack" data-panel="crack" class="section-card">
       <div class="section-head">
-        <span class="step-num">6</span>
+        <span class="step-num">5</span>
         <h2 class="section-title">Crack Handshake</h2>
       </div>
       <div class="flex flex-wrap items-end gap-3 mb-3">
@@ -286,8 +271,8 @@
         <div id="crack-found" class="crack-found hidden"></div>
       </div>
 
-      <details class="crack-raw">
-        <summary>Raw aircrack-ng output</summary>
+      <details class="crack-raw" open>
+        <summary>Live crack view</summary>
         <pre id="crack-out" class="terminal mt-2"></pre>
       </details>
     </section>
@@ -295,12 +280,12 @@
     <!-- 7 · WORDLIST STUDIO -->
     <section id="sec-wordgen" data-panel="wordgen" class="section-card">
       <div class="section-head">
-        <span class="step-num">7</span>
+        <span class="step-num">6</span>
         <h2 class="section-title">Wordlist Studio</h2>
       </div>
       <p class="section-hint">
         Describe the target, choose mutations, optionally add number patterns — it all merges into one
-        deduplicated <code>.txt</code> in your wordlists folder, ready for section 6.
+        deduplicated <code>.txt</code> in your wordlists folder, ready for section 5.
       </p>
 
       <!-- A · TARGET WORDS -->
@@ -428,7 +413,6 @@
   </main>
 
   <script src="/static/js/api.js"></script>
-  <script src="/static/js/ws.js"></script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

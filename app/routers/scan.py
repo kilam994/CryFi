@@ -52,6 +52,7 @@ async def start_scan(body: ScanStart) -> dict:
     cmd = [
         *config.sudo_prefix(),
         "airodump-ng",
+        "--background", "1",          # suppress the TUI redraw flood (no TTY)
         "--write", prefix_path,
         "--output-format", "csv",
         "--write-interval", "1",

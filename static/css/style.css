@@ -122,6 +122,8 @@ html { scroll-behavior: smooth; }
 .enc-wpa3 { background: rgba(251,191,36,0.16); color: #fbbf24; }
 .enc-open { background: rgba(248,113,113,0.16); color: #fca5a5; }
 .essid-hidden { font-size: 0.8rem; opacity: 0.85; cursor: help; }
+.reg-info { font-size: 0.74rem; color: #94a3b8; background: #0b1220; border: 1px solid #1e293b; border-left: 3px solid #60a5fa; border-radius: 0.4rem; padding: 0.5rem 0.7rem; margin-bottom: 0.7rem; }
+.reg-info b { color: #cbd5e1; }
 
 .kv { display: flex; justify-content: space-between; gap: 0.5rem; }
 .kv span { color: #94a3b8; }

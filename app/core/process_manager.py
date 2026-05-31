@@ -60,6 +60,7 @@ class ProcessManager:
 
     async def start(self, kind: str, cmd: list[str], meta: dict | None = None) -> Job:
         """Spawn ``cmd`` in its own process group and begin pumping output."""
+        self.reap()  # drop old finished jobs so the registry stays bounded
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,

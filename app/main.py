@@ -1,11 +1,12 @@
 """CryFi — FastAPI application entrypoint.
 
 A local GUI over the aircrack-ng suite for *authorized* network auditing.
-Mounts API routers, the WebSocket terminal, and the static frontend.
+Mounts API routers and the static frontend.
 """
 from __future__ import annotations
 
 import contextlib
+import logging
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
@@ -14,13 +15,24 @@ from fastapi.staticfiles import StaticFiles
 from . import config
 from .core import auth as auth_core
 from .core.process_manager import manager
-from .routers import auth, crack, execution, files, handshakes, interfaces, scan, wordlist_gen
-from .ws import terminal
+from .routers import (
+    auth, crack, execution, files, handshakes, interfaces, regulatory, scan, wordlist_gen,
+)
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: nothing to warm. Yield control to serve requests.
+    # Startup: read the regulatory domain so we know what's allowed where, and
+    # log a quick summary (transmit-blocked channels) for operator visibility.
+    with contextlib.suppress(Exception):
+        info = await regulatory.regulatory()
+        blocked = info.get("tx_blocked_channels") or []
+        logging.getLogger("uvicorn.error").info(
+            "Regulatory domain: %s%s — transmit (deauth) blocked on channels: %s",
+            info.get("country", "??"),
+            " [self-managed]" if info.get("self_managed") else "",
+            ", ".join(map(str, blocked)) if blocked else "none",
+        )
     yield
     # Shutdown: ensure no aircrack processes survive the server.
     await manager.stop_all()
@@ -66,15 +78,13 @@ async def no_cache_static(request: Request, call_next):
 # API routers
 app.include_router(auth.router)
 app.include_router(interfaces.router)
+app.include_router(regulatory.router)
 app.include_router(scan.router)
 app.include_router(execution.router)
 app.include_router(files.router)
 app.include_router(crack.router)
 app.include_router(handshakes.router)
 app.include_router(wordlist_gen.router)
-
-# WebSocket terminal
-app.include_router(terminal.router)
 
 
 @app.get("/api/health")

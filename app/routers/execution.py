@@ -74,6 +74,7 @@ async def start_capture(body: CaptureStart) -> dict:
     cmd = [
         *config.sudo_prefix(),
         "airodump-ng",
+        "--background", "1",          # suppress the TUI redraw flood (no TTY)
         "--bssid", bssid,
         "--write", prefix_path,
         "--output-format", "pcap,csv",
