@@ -145,11 +145,15 @@ def capture_status(job_id: str) -> dict:
         {"station": c["station"], "power": c["power"], "packets": c["packets"]}
         for c in data["clients"] if (c.get("bssid") or "").upper() == bssid
     ]
+    # When a client associates/probes, airodump fills in a previously hidden
+    # ESSID — surface it so the UI can show the revealed name.
+    revealed = ap["essid"] if (ap and ap.get("essid")) else None
     return {
         "job_id": job.job_id,
         "done": job.done,
         "handshake_captured": bool(job.meta.get("handshake_captured")),
         "essid": job.meta.get("essid"),
+        "revealed_essid": revealed,
         "bssid": job.meta.get("bssid"),
         "channel": job.meta.get("channel"),
         "data": ap["data"] if ap else 0,

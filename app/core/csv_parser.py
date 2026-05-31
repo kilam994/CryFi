@@ -61,6 +61,9 @@ def _parse_aps(block: list[str]) -> list[dict]:
         # Basic shape guard: BSSID must look like a MAC.
         if bssid.count(":") != 5:
             continue
+        # Hidden APs broadcast no name: the ESSID is blank or just null/control
+        # bytes. Strip those so "hidden" is a clean, reliable flag.
+        essid = "".join(c for c in fields[13] if c.isprintable()).strip()
         rows.append({
             "bssid": bssid,
             "first_seen": fields[1].strip(),
@@ -73,7 +76,8 @@ def _parse_aps(block: list[str]) -> list[dict]:
             "power": _to_int(fields[8], default=-100),
             "beacons": _to_int(fields[9]),
             "data": _to_int(fields[10]),
-            "essid": fields[13].strip(),
+            "essid": essid,
+            "hidden": essid == "",
         })
     return rows
 

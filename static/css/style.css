@@ -121,6 +121,7 @@ html { scroll-behavior: smooth; }
 .enc-wpa2 { background: rgba(16,185,129,0.16); color: #6ee7b7; }
 .enc-wpa3 { background: rgba(251,191,36,0.16); color: #fbbf24; }
 .enc-open { background: rgba(248,113,113,0.16); color: #fca5a5; }
+.essid-hidden { font-size: 0.8rem; opacity: 0.85; cursor: help; }
 
 .kv { display: flex; justify-content: space-between; gap: 0.5rem; }
 .kv span { color: #94a3b8; }

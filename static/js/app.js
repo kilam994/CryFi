@@ -17,6 +17,8 @@
   let capturePollTimer = null;
   let captureStream = null;     // TerminalStream for the raw capture output
   let captureStartMs = 0;
+  let revealMode = false;       // true when listening to uncover a hidden SSID
+  let revealedDone = false;
   let pendingCrackPrefill = null; // {cap, bssid} queued from Handshakes tab
   const runningJobs = new Set(); // every job_id we spawn (capture + deauths)
   let deauthSeq = 0; // running count for deauth toast labels
@@ -296,9 +298,12 @@
       const tr = document.createElement("tr");
       tr.className = "scan-row";
       if (selectedTarget && selectedTarget.bssid === ap.bssid) tr.classList.add("selected");
+      const essidCell = ap.hidden
+        ? '<span class="text-slate-500">&lt;hidden&gt;</span> <span class="essid-hidden" title="Hidden network — select it to reveal">🔒</span>'
+        : escapeHtml(ap.essid);
       tr.innerHTML = `
         <td><code>${ap.bssid}</code></td>
-        <td>${escapeHtml(ap.essid) || '<span class="text-slate-500">&lt;hidden&gt;</span>'}</td>
+        <td>${essidCell}</td>
         <td>${ap.channel}</td>
         <td>${signalCell(ap.power)}</td>
         <td>${encLabel(ap)}</td>
@@ -347,9 +352,11 @@
     }
     selectedTarget = ap;
     $("#t-bssid").textContent = ap.bssid;
-    $("#t-essid").textContent = ap.essid || "<hidden>";
+    $("#t-essid").textContent = ap.hidden ? "🔒 hidden" : (ap.essid || "<hidden>");
     $("#t-channel").textContent = ap.channel;
     $("#t-enc").textContent = ap.privacy || "—";
+    // Offer "Reveal SSID" only for hidden networks.
+    $("#t-reveal").classList.toggle("hidden", !ap.hidden);
     // Highlight the row without a full re-render.
     $$(".scan-row").forEach((r) => r.classList.remove("selected"));
     [...$$(".scan-row")].find((r) => r.querySelector("code")?.textContent === ap.bssid)
@@ -365,6 +372,8 @@
     $("#t-capture").classList.toggle("hidden", captureActive);
     $("#t-capture").disabled = !hasTarget || captureActive;
     $("#t-stop-capture").classList.toggle("hidden", !captureActive);
+    // Reveal button: only for a hidden target, and not while a job is running.
+    $("#t-reveal").classList.toggle("hidden", captureActive || !(hasTarget && selectedTarget.hidden));
     // Deauth only makes sense while a capture is running on this target.
     $("#t-deauth").disabled = !captureActive;
     $("#scan-rows").classList.toggle("locked", captureActive);
@@ -397,14 +406,17 @@
       captureStartMs = Date.now();
       captureTargetSnap = { ...selectedTarget, iface };
       setCaptureUiState();
-      captureStatus("📡 Capturing — waiting for handshake…", "warn");
+      revealedDone = false;
+      captureStatus(revealMode
+        ? "🔓 Listening to reveal the hidden SSID — deauth a client to speed it up…"
+        : "📡 Capturing — waiting for handshake…", "warn");
       // Nice parsed dashboard + raw stream into the scan section.
       showCaptureDash(captureTargetSnap);
       if (!captureStream) captureStream = new TerminalStream($("#capture-out"));
       captureStream.clear();
       captureStream.connect(res.job_id);
       beginCapturePoll();
-      toast(`Capture started → ${captureTargetSnap.bssid}`, "info");
+      toast(`${revealMode ? "Reveal" : "Capture"} started → ${captureTargetSnap.bssid}`, "info");
       if (is5GHz(captureTargetSnap.channel)) {
         captureStatus("5 GHz — deauth often blocked; wait for a natural reconnect.", "warn");
         toast("5 GHz target: deauth may not transmit (regulatory). The 2.4 GHz version of the same router usually shares the password.", "info", 9000);
@@ -432,7 +444,7 @@
   function setCapState(state) {
     const el = $("#cap-state");
     el.textContent = state;
-    el.className = "crack-state " + (state === "captured" ? "found"
+    el.className = "crack-state " + (["captured", "revealed"].includes(state) ? "found"
       : state === "capturing" ? "capturing"
       : "notfound");
   }
@@ -454,6 +466,7 @@
     endCapturePoll();
     captureActive = false;
     captureJobId = null;
+    if (!revealedDone) revealMode = false;  // clear unless a reveal just succeeded
     if (captureStream) captureStream.close();
     setCaptureUiState();
   }
@@ -504,6 +517,11 @@
         const st = await API.captureJobStatus(jobId);
         misses = 0;
         renderCaptureDash(st);
+        // Hidden-SSID revealed: airodump filled in the name.
+        if (revealMode && !revealedDone && st.revealed_essid) {
+          revealSucceeded(st.revealed_essid);
+          return;
+        }
         if (st.done || st.handshake_captured) {
           const ok = !!st.handshake_captured;
           endCapture(ok);
@@ -517,6 +535,37 @@
   }
   function endCapturePoll() {
     if (capturePollTimer) { clearInterval(capturePollTimer); capturePollTimer = null; }
+  }
+
+  // --- Reveal hidden SSID -------------------------------------------------
+  function revealTarget() {
+    if (!selectedTarget || captureActive) return;
+    revealMode = true;
+    captureTarget();  // reuse the listen/dashboard/deauth machinery
+  }
+
+  function revealSucceeded(name) {
+    revealedDone = true;
+    const bssid = (captureTargetSnap || selectedTarget || {}).bssid;
+    setCapState("revealed");
+    captureStatus(`🔓 Revealed: ${name}`, "ok");
+    const f = $("#cap-found");
+    f.innerHTML = `<div class="big">🔓 SSID revealed!</div>` +
+      `<div style="margin-top:.3rem">network name: <code>${escapeHtml(name)}</code></div>`;
+    f.classList.remove("hidden"); f.classList.remove("show"); void f.offsetWidth; f.classList.add("show");
+    toast(`🔓 Hidden SSID revealed: ${name}`, "info", 10000);
+    // Reflect the name in the Target panel + the scan table row + cache.
+    $("#t-essid").textContent = name;
+    if (selectedTarget) { selectedTarget.essid = name; selectedTarget.hidden = false; }
+    const cached = _apsCache.find((a) => a.bssid === bssid);
+    if (cached) { cached.essid = name; cached.hidden = false; }
+    if (bssid) {
+      const row = [...$$(".scan-row")].find((r) => r.querySelector("code")?.textContent === bssid);
+      if (row && row.children[1]) row.children[1].textContent = name;
+    }
+    // The reveal goal is met — stop the listen job.
+    stopAll();
+    revealMode = false;
   }
 
   // Fire-and-forget: give instant feedback and never block the button on the
@@ -1171,6 +1220,7 @@
     $("#scan-start").addEventListener("click", startScan);
     $("#scan-stop").addEventListener("click", stopScan);
     $("#t-capture").addEventListener("click", captureTarget);
+    $("#t-reveal").addEventListener("click", revealTarget);
     $("#t-stop-capture").addEventListener("click", stopAll);
     $("#t-deauth").addEventListener("click", deauthTarget);
     $("#term-stop").addEventListener("click", stopActiveJob);
